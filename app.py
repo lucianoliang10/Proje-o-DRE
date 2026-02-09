@@ -212,6 +212,24 @@ def build_leaf_items() -> tuple[list[dict], dict]:
     return leaf_items, group_children
 
 
+def build_base_input_items(leaf_items: list[dict]) -> list[dict]:
+    items = []
+    items.extend(leaf_items)
+    for group in GROUP_DEFINITIONS:
+        if not group["children"]:
+            items.append({
+                "group": group["name"],
+                "key": group["name"],
+                "label": group["name"],
+            })
+    return items
+
+
+def initialize_base_values(items: list[dict]) -> pd.Series:
+    index = [item["key"] for item in items]
+    return pd.Series(0.0, index=index, dtype=float)
+
+
 def compute_leaf_projection(base_values: pd.Series, leaf_items: list[dict], rates: pd.DataFrame) -> pd.DataFrame:
     data = pd.DataFrame(index=[item["key"] for item in leaf_items], columns=ALL_YEARS, dtype=float)
     for item in leaf_items:
@@ -299,7 +317,10 @@ def main() -> None:
     st.title("Projeção Anual (2026-2036)")
 
     st.sidebar.header("Base 2026")
-    uploaded_file = st.sidebar.file_uploader("Carregar Excel (.xlsx)", type=["xlsx"])
+    input_mode = st.sidebar.radio("Forma de input", options=["Manual", "Excel"], horizontal=True)
+    uploaded_file = None
+    if input_mode == "Excel":
+        uploaded_file = st.sidebar.file_uploader("Carregar Excel (.xlsx)", type=["xlsx"])
 
     base_values = pd.Series(dtype=float)
     column_selection = None
@@ -322,6 +343,16 @@ def main() -> None:
                 st.sidebar.error(str(exc))
 
     leaf_items, group_children = build_leaf_items()
+    base_input_items = build_base_input_items(leaf_items)
+
+    if "base_values" not in st.session_state:
+        st.session_state.base_values = initialize_base_values(base_input_items)
+
+    if not base_values.empty:
+        updated_base = st.session_state.base_values.copy()
+        for item in base_input_items:
+            updated_base[item["key"]] = float(base_values.get(item["label"], updated_base[item["key"]]))
+        st.session_state.base_values = updated_base
 
     if "rates" not in st.session_state:
         st.session_state.rates = pd.DataFrame(
@@ -332,9 +363,29 @@ def main() -> None:
 
     st.sidebar.caption("A base 2026 é obrigatória para projetar 2027-2036.")
 
-    tabs = st.tabs(["Percentuais", "P&L Projetado"])
+    tabs = st.tabs(["Base 2026", "Percentuais", "P&L Projetado"])
 
     with tabs[0]:
+        st.subheader("Base 2026 (editável)")
+        base_df = pd.DataFrame({
+            "Linha": [item["label"] for item in base_input_items],
+            "Valor 2026": [st.session_state.base_values.get(item["key"], 0.0) for item in base_input_items],
+        })
+        base_editor = st.data_editor(
+            base_df,
+            use_container_width=True,
+            num_rows="fixed",
+            column_config={"Linha": st.column_config.TextColumn(disabled=True)},
+        )
+        if st.button("Atualizar base 2026"):
+            updated = pd.Series(
+                base_editor["Valor 2026"].astype(float).values,
+                index=[item["key"] for item in base_input_items],
+            )
+            st.session_state.base_values = updated
+            st.success("Base 2026 atualizada.")
+
+    with tabs[1]:
         st.subheader("Percentuais de Projeção (Nível 2)")
         rates_df = st.session_state.rates.copy()
         rates_df.insert(0, "Linha", [item["label"] for item in leaf_items])
@@ -360,32 +411,30 @@ def main() -> None:
                 )
                 st.success("Percentuais zerados.")
 
-    with tabs[1]:
+    with tabs[2]:
         st.subheader("P&L Projetado")
-        if base_values.empty:
-            st.info("Carregue uma base de 2026 para visualizar o P&L projetado.")
-        else:
-            leaf_projection = compute_leaf_projection(base_values, leaf_items, st.session_state.rates)
-            group_totals = aggregate_groups(leaf_projection, group_children, base_values)
-            calc_totals = compute_calc_lines(group_totals, CALC_LINES)
-            blueprint = build_blueprint()
-            final_df, calc_labels = build_final_table(
-                blueprint,
-                group_totals,
-                leaf_projection,
-                group_children,
-                calc_totals,
-                leaf_items,
-            )
+        base_values = st.session_state.base_values
+        leaf_projection = compute_leaf_projection(base_values, leaf_items, st.session_state.rates)
+        group_totals = aggregate_groups(leaf_projection, group_children, base_values)
+        calc_totals = compute_calc_lines(group_totals, CALC_LINES)
+        blueprint = build_blueprint()
+        final_df, calc_labels = build_final_table(
+            blueprint,
+            group_totals,
+            leaf_projection,
+            group_children,
+            calc_totals,
+            leaf_items,
+        )
 
-            def style_rows(row):
-                label = row["Label"].strip()
-                if label in calc_labels:
-                    return ["font-weight: bold;"] * len(row)
-                return [""] * len(row)
+        def style_rows(row):
+            label = row["Label"].strip()
+            if label in calc_labels:
+                return ["font-weight: bold;"] * len(row)
+            return [""] * len(row)
 
-            styled = final_df.style.format({year: format_pt_br for year in ALL_YEARS}).apply(style_rows, axis=1)
-            st.dataframe(styled, use_container_width=True)
+        styled = final_df.style.format({year: format_pt_br for year in ALL_YEARS}).apply(style_rows, axis=1)
+        st.dataframe(styled, use_container_width=True)
 
 
 if __name__ == "__main__":
