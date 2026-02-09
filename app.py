@@ -435,7 +435,43 @@ def main() -> None:
                 return ["font-weight: bold;"] * len(row)
             return [""] * len(row)
 
-        styled = final_df.style.format({year: format_pt_br for year in ALL_YEARS}).apply(style_rows, axis=1)
+        table_styles = [
+            {
+                "selector": "th",
+                "props": [
+                    ("background-color", "#f8f9fb"),
+                    ("color", "#6b7280"),
+                    ("font-weight", "600"),
+                    ("border", "1px solid #e5e7eb"),
+                    ("padding", "6px 8px"),
+                    ("font-size", "12px"),
+                    ("text-align", "right"),
+                ],
+            },
+            {
+                "selector": "th.col0",
+                "props": [("text-align", "left")],
+            },
+            {
+                "selector": "td",
+                "props": [
+                    ("border", "1px solid #e5e7eb"),
+                    ("padding", "6px 8px"),
+                    ("font-size", "12px"),
+                    ("text-align", "right"),
+                ],
+            },
+            {
+                "selector": "td.col0",
+                "props": [("text-align", "left")],
+            },
+        ]
+
+        styled = (
+            final_df.style.format({year: format_pt_br for year in ALL_YEARS})
+            .apply(style_rows, axis=1)
+            .set_table_styles(table_styles)
+        )
         st.dataframe(styled, use_container_width=True)
 
 
