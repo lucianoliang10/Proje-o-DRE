@@ -263,9 +263,11 @@ def aggregate_groups(
 
 def compute_calc_lines(group_totals: dict, calc_lines: list[dict]) -> dict:
     calc_totals = {}
+    combined_totals = dict(group_totals)
     for calc in calc_lines:
-        series = sum(group_totals[name] for name in calc["formula"])
+        series = sum(combined_totals[name] for name in calc["formula"])
         calc_totals[calc["name"]] = series
+        combined_totals[calc["name"]] = series
     return calc_totals
 
 
