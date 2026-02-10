@@ -307,6 +307,8 @@ def build_final_table(
 def format_pt_br(value: float) -> str:
     if pd.isna(value):
         return ""
+    if abs(value) < 0.005:
+        return "–"
     formatted = f"{abs(value):,.2f}"
     formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
     if value < 0:
@@ -315,14 +317,42 @@ def format_pt_br(value: float) -> str:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Projeção Anual 2026-2036", layout="wide")
-    st.title("Projeção Anual (2026-2036)")
+    st.set_page_config(page_title="Projeções Financeiras – P&L Anual", layout="wide")
+    st.markdown(
+        """
+        <style>
+        html, body, [class*="css"]  { font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; }
+        .block-container { padding-top: 1.25rem; padding-bottom: 2rem; }
+        h1, h2, h3 { letter-spacing: -0.01em; }
+        .section-title { font-size: 1.1rem; font-weight: 600; margin: 1.5rem 0 0.75rem; }
+        .section-subtitle { color: #6b7280; font-size: 0.9rem; margin-top: -0.35rem; }
+        .kpi-card { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem 1rem; }
+        .kpi-label { color: #6b7280; font-size: 0.8rem; text-transform: uppercase; letter-spacing: .04em; }
+        .kpi-value { font-size: 1.05rem; font-weight: 600; color: #111827; margin-top: 0.2rem; }
+        .stDataFrame { border: 1px solid #e5e7eb; border-radius: 8px; }
+        .stDataFrame [role="columnheader"] { background: #f8f9fb; color: #4b5563; font-weight: 600; }
+        .stDataFrame [role="row"]:hover { background-color: #f9fafb; }
+        .stDataFrame [role="row"]:nth-child(even) { background-color: #fbfdff; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.sidebar.header("Base 2026")
-    input_mode = st.sidebar.radio("Forma de input", options=["Manual", "Excel"], horizontal=True)
+    st.markdown(
+        """
+        <div>
+            <h1 style="margin-bottom:0.1rem;">Projeções Financeiras – P&amp;L Anual</h1>
+            <div class="section-subtitle">Base 2026 | Projeções 2027–2036</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.sidebar.header("Base de dados")
+    input_mode = st.sidebar.radio("Input", options=["Manual", "Excel"], horizontal=True)
     uploaded_file = None
     if input_mode == "Excel":
-        uploaded_file = st.sidebar.file_uploader("Carregar Excel (.xlsx)", type=["xlsx"])
+        uploaded_file = st.sidebar.file_uploader("Arquivo (.xlsx)", type=["xlsx"])
 
     base_values = pd.Series(dtype=float)
     column_selection = None
@@ -331,11 +361,11 @@ def main() -> None:
         df = pd.read_excel(uploaded_file)
         defaults = detect_default_columns(df)
 
-        with st.sidebar.expander("Mapeamento de colunas", expanded=False):
+        with st.sidebar.expander("Mapeamento", expanded=False):
             columns = df.columns.tolist()
-            year_col = st.selectbox("Coluna de Ano", options=columns, index=columns.index(defaults["year_col"]) if defaults["year_col"] in columns else 0)
-            line_col = st.selectbox("Coluna de Linha", options=columns, index=columns.index(defaults["line_col"]) if defaults["line_col"] in columns else 0)
-            value_col = st.selectbox("Coluna de Valor", options=columns, index=columns.index(defaults["value_col"]) if defaults["value_col"] in columns else 0)
+            year_col = st.selectbox("Ano", options=columns, index=columns.index(defaults["year_col"]) if defaults["year_col"] in columns else 0)
+            line_col = st.selectbox("Linha", options=columns, index=columns.index(defaults["line_col"]) if defaults["line_col"] in columns else 0)
+            value_col = st.selectbox("Valor", options=columns, index=columns.index(defaults["value_col"]) if defaults["value_col"] in columns else 0)
             column_selection = {"year_col": year_col, "line_col": line_col, "value_col": value_col}
 
         if column_selection:
@@ -343,6 +373,13 @@ def main() -> None:
                 base_values = load_base(df, **column_selection)
             except ValueError as exc:
                 st.sidebar.error(str(exc))
+
+    st.sidebar.header("Período de projeção")
+    st.sidebar.markdown(f"**Base:** {BASE_YEAR}")
+    st.sidebar.markdown(f"**Projeções:** {PROJECTION_YEARS[0]}–{PROJECTION_YEARS[-1]}")
+
+    st.sidebar.header("Controles")
+    st.sidebar.caption("Atualize a base 2026 e os percentuais para recalcular.")
 
     leaf_items, group_children = build_leaf_items()
     base_input_items = build_base_input_items(leaf_items)
@@ -363,21 +400,37 @@ def main() -> None:
             columns=PROJECTION_YEARS,
         )
 
-    st.sidebar.caption("A base 2026 é obrigatória para projetar 2027-2036.")
+    st.markdown('<div class="section-title">Seção 1 · Parâmetros de Projeção</div>', unsafe_allow_html=True)
+    col_base, col_proj = st.columns([1, 3])
+    with col_base:
+        st.markdown(
+            f'<div class="kpi-card"><div class="kpi-label">Ano base</div>'
+            f'<div class="kpi-value">{BASE_YEAR}</div></div>',
+            unsafe_allow_html=True,
+        )
+    with col_proj:
+        st.markdown(
+            f'<div class="kpi-card"><div class="kpi-label">Anos projetados</div>'
+            f'<div class="kpi-value">{PROJECTION_YEARS[0]}–{PROJECTION_YEARS[-1]}</div></div>',
+            unsafe_allow_html=True,
+        )
 
-    tabs = st.tabs(["Base 2026", "Percentuais", "P&L Projetado"])
-
-    with tabs[0]:
-        st.subheader("Base 2026 (editável)")
+    with st.expander("Base 2026 (editável)", expanded=True):
         base_df = pd.DataFrame({
-            "Linha": [item["label"] for item in base_input_items],
+            "Activity": [item["group"] for item in base_input_items],
+            "Category": [item["label"] for item in base_input_items],
             "Valor 2026": [st.session_state.base_values.get(item["key"], 0.0) for item in base_input_items],
         })
         base_editor = st.data_editor(
             base_df,
             use_container_width=True,
             num_rows="fixed",
-            column_config={"Linha": st.column_config.TextColumn(disabled=True)},
+            column_config={
+                "Activity": st.column_config.TextColumn(disabled=True, width="medium"),
+                "Category": st.column_config.TextColumn(disabled=True, width="large"),
+                "Valor 2026": st.column_config.NumberColumn(format="%.2f", width="small"),
+            },
+            hide_index=True,
         )
         if st.button("Atualizar base 2026"):
             updated = pd.Series(
@@ -387,24 +440,34 @@ def main() -> None:
             st.session_state.base_values = updated
             st.success("Base 2026 atualizada.")
 
-    with tabs[1]:
-        st.subheader("Percentuais de Projeção (Nível 2)")
+    st.markdown('<div class="section-title">Seção 2 · Percentuais de Projeção</div>', unsafe_allow_html=True)
+    with st.expander("Percentuais de Projeção", expanded=True):
         rates_df = st.session_state.rates.copy()
-        rates_df.insert(0, "Linha", [item["label"] for item in leaf_items])
+        rates_df.insert(0, "Coluna1", [item["label"] for item in leaf_items])
+        rates_df.insert(0, "Category", [item["group"] for item in leaf_items])
+        rates_df.insert(0, "Activity", [item["group"] for item in leaf_items])
 
         editor = st.data_editor(
             rates_df,
             use_container_width=True,
             num_rows="fixed",
-            column_config={"Linha": st.column_config.TextColumn(disabled=True)},
+            column_config={
+                "Activity": st.column_config.TextColumn(disabled=True, width="medium"),
+                "Category": st.column_config.TextColumn(disabled=True, width="medium"),
+                "Coluna1": st.column_config.TextColumn(disabled=True, width="large"),
+                **{
+                    year: st.column_config.NumberColumn(format="%.2f%%", width="small")
+                    for year in PROJECTION_YEARS
+                },
+            },
+            hide_index=True,
         )
 
-        col1, col2 = st.columns(2)
-        with col1:
+        action_spacer, action_col = st.columns([4, 1])
+        with action_col:
             if st.button("Recalcular projeção"):
-                st.session_state.rates = editor.drop(columns=["Linha"]).astype(float)
+                st.session_state.rates = editor.drop(columns=["Activity", "Category", "Coluna1"]).astype(float)
                 st.success("Projeção recalculada.")
-        with col2:
             if st.button("Limpar percentuais"):
                 st.session_state.rates = pd.DataFrame(
                     0.0,
@@ -413,66 +476,76 @@ def main() -> None:
                 )
                 st.success("Percentuais zerados.")
 
-    with tabs[2]:
-        st.subheader("P&L Projetado")
-        base_values = st.session_state.base_values
-        leaf_projection = compute_leaf_projection(base_values, leaf_items, st.session_state.rates)
-        group_totals = aggregate_groups(leaf_projection, group_children, base_values)
-        calc_totals = compute_calc_lines(group_totals, CALC_LINES)
-        blueprint = build_blueprint()
-        final_df, calc_labels = build_final_table(
-            blueprint,
-            group_totals,
-            leaf_projection,
-            group_children,
-            calc_totals,
-            leaf_items,
-        )
+    st.markdown('<div class="section-title">Seção 3 · Demonstrativo Projetado (P&L)</div>', unsafe_allow_html=True)
+    base_values = st.session_state.base_values
+    leaf_projection = compute_leaf_projection(base_values, leaf_items, st.session_state.rates)
+    group_totals = aggregate_groups(leaf_projection, group_children, base_values)
+    calc_totals = compute_calc_lines(group_totals, CALC_LINES)
+    blueprint = build_blueprint()
+    final_df, calc_labels = build_final_table(
+        blueprint,
+        group_totals,
+        leaf_projection,
+        group_children,
+        calc_totals,
+        leaf_items,
+    )
 
-        def style_rows(row):
-            label = row["Label"].strip()
-            if label in calc_labels:
-                return ["font-weight: bold;"] * len(row)
-            return [""] * len(row)
+    group_labels = {group["name"] for group in GROUP_DEFINITIONS}
+    highlight_calc = {"EBITDA", "Adjusted EBITDA", "Profit/Loss"}
 
-        table_styles = [
-            {
-                "selector": "th",
-                "props": [
-                    ("background-color", "#f8f9fb"),
-                    ("color", "#6b7280"),
-                    ("font-weight", "600"),
-                    ("border", "1px solid #e5e7eb"),
-                    ("padding", "6px 8px"),
-                    ("font-size", "12px"),
-                    ("text-align", "right"),
-                ],
-            },
-            {
-                "selector": "th.col0",
-                "props": [("text-align", "left")],
-            },
-            {
-                "selector": "td",
-                "props": [
-                    ("border", "1px solid #e5e7eb"),
-                    ("padding", "6px 8px"),
-                    ("font-size", "12px"),
-                    ("text-align", "right"),
-                ],
-            },
-            {
-                "selector": "td.col0",
-                "props": [("text-align", "left")],
-            },
-        ]
+    def style_rows(row):
+        label = row["Label"]
+        base_label = label.strip()
+        styles = [""] * len(row)
+        if base_label in group_labels:
+            styles = ["background-color: #f2f2f2; font-weight: 600; font-size: 13px;"] * len(row)
+        elif base_label in calc_labels:
+            styles = ["font-weight: 700; background-color: #f8fafc; border-top: 1px solid #d1d5db;"] * len(row)
+        if base_label in highlight_calc:
+            styles = [f"{style} color: #111827; font-size: 13.5px;" for style in styles]
+        if label.startswith("    "):
+            styles[0] = f"{styles[0]} padding-left: 18px;"
+        return styles
 
-        styled = (
-            final_df.style.format({year: format_pt_br for year in ALL_YEARS})
-            .apply(style_rows, axis=1)
-            .set_table_styles(table_styles)
-        )
-        st.dataframe(styled, use_container_width=True)
+    table_styles = [
+        {
+            "selector": "th",
+            "props": [
+                ("background-color", "#f8f9fb"),
+                ("color", "#4b5563"),
+                ("font-weight", "600"),
+                ("border-bottom", "1px solid #e5e7eb"),
+                ("padding", "6px 10px"),
+                ("font-size", "12px"),
+                ("text-align", "right"),
+            ],
+        },
+        {
+            "selector": "th.col0",
+            "props": [("text-align", "left")],
+        },
+        {
+            "selector": "td",
+            "props": [
+                ("border-bottom", "1px solid #eef2f7"),
+                ("padding", "6px 10px"),
+                ("font-size", "12px"),
+                ("text-align", "right"),
+            ],
+        },
+        {
+            "selector": "td.col0",
+            "props": [("text-align", "left")],
+        },
+    ]
+
+    styled = (
+        final_df.style.format({year: format_pt_br for year in ALL_YEARS})
+        .apply(style_rows, axis=1)
+        .set_table_styles(table_styles)
+    )
+    st.dataframe(styled, use_container_width=True)
 
 
 if __name__ == "__main__":
